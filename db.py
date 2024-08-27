@@ -61,32 +61,35 @@ def fetch_and_save_records():
     records_list = [
         {
             'emp_id': user_dict.get(record.user_id, 'Unknown'),
-            'date': record.timestamp.date().isoformat(),
-            'time': record.timestamp.time().isoformat(),
+            'timestamp': record.timestamp
         }
         for record in attendance
     ]
 
     df = pd.DataFrame(records_list)
-    df['date'] = pd.to_datetime(df['date']).dt.date
+    
+    # Convert timestamps to datetime
+    df['datetime'] = pd.to_datetime(df['timestamp'])
+    
+    # Apply cutoff time of 05:00
+    df['cutoff_date'] = df['datetime'].apply(lambda dt: dt.date() if dt.time() >= datetime.strptime('05:00:00', '%H:%M:%S').time() else (dt - timedelta(days=1)).date())
+    df['cutoff_time'] = df['datetime'].apply(lambda dt: dt.time() if dt.time() >= datetime.strptime('05:00:00', '%H:%M:%S').time() else dt.time())
 
-    last_date = lastday()
-    last_date = pd.to_datetime(last_date).date() if last_date else datetime(1970, 1, 1).date()
-
-    df = df[df['date'] >= last_date]
-    df['datetime'] = pd.to_datetime(df['date'].astype(str) + ' ' + df['time'])
-
+    # Group by employee ID and cutoff date
+    grouped = df.groupby(['emp_id', 'cutoff_date'])
+    
     result = []
-
-    grouped = df.groupby(['emp_id', 'date'])
-
     for (emp_id, date), group in grouped:
         if len(group) == 1:
-            start_time = group['datetime'].min().strftime('%H:%M:%S')
+            start_time = group['cutoff_time'].min().strftime('%H:%M:%S')
             end_time = None
         else:
-            start_time = group['datetime'].min().strftime('%H:%M:%S')
-            end_time = group['datetime'].max().strftime('%H:%M:%S')
+            if group['cutoff_time'].min() > datetime.strptime('05:00:00', '%H:%M:%S').time():
+                start_time = group['cutoff_time'].min().strftime('%H:%M:%S')
+                end_time = group['cutoff_time'].max().strftime('%H:%M:%S')
+            else:
+                start_time = group['cutoff_time'].max().strftime('%H:%M:%S')
+                end_time = group['cutoff_time'].min().strftime('%H:%M:%S')
 
         result.append({
             'emp_id': emp_id,
@@ -105,6 +108,7 @@ def fetch_and_save_records():
     conn.disconnect()
     return result_df
 
+
 def update_records(new_data):
     db_conn = conDB()
     try:
@@ -122,11 +126,12 @@ def update_records(new_data):
                 leave_early = None
 
                 standard_start_time = datetime.strptime('09:01:00', '%H:%M:%S').time()
+                standard_start_time2 = datetime.strptime('09:00:00', '%H:%M:%S').time()
                 standard_end_time = datetime.strptime('20:00:00', '%H:%M:%S').time()
 
                 start_time_dt = datetime.strptime(start_time, '%H:%M:%S').time()
                 if start_time_dt > standard_start_time:
-                    time_late_td = datetime.combine(datetime.min, start_time_dt) - datetime.combine(datetime.min, standard_start_time)
+                    time_late_td = datetime.combine(datetime.min, start_time_dt) - datetime.combine(datetime.min, standard_start_time2)
                     time_late = str(timedelta(seconds=time_late_td.total_seconds()))
 
                 if end_time:
@@ -143,7 +148,6 @@ def update_records(new_data):
                 cursor.execute(sql_update, (start_time, end_time, time_late, leave_early, emp_id, date_str))
 
             db_conn.commit()
-            print("Records updated successfully.")
     except Exception as e:
         print(f"An error occurred: {e}")
     finally:
@@ -173,12 +177,13 @@ def insert_records_to_db(df):
                 leave_early = None
                 
                 standard_start_time = datetime.strptime('09:01:00', '%H:%M:%S').time()
+                standard_start_time2 = datetime.strptime('09:00:00', '%H:%M:%S').time()
                 standard_end_time = datetime.strptime('20:00:00', '%H:%M:%S').time()
                 
                 start_time_dt = datetime.strptime(start_time, '%H:%M:%S').time()
                 
                 if start_time_dt > standard_start_time:
-                    time_late_td = datetime.combine(datetime.min, start_time_dt) - datetime.combine(datetime.min, standard_start_time)
+                    time_late_td = datetime.combine(datetime.min, start_time_dt) - datetime.combine(datetime.min, standard_start_time2)
                     time_late = str(timedelta(seconds=time_late_td.total_seconds()))
 
                 if end_time:
