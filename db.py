@@ -200,7 +200,7 @@ def insert_records_to_db(df):
                 cursor.execute(sql, (emp_id, date, start_time, end_time, time_late, leave_early, status, created_at, created_by, updated_at, updated_by))
 
             db_conn.commit()
-            print("Records inserted successfully.")
+            print(f"Records {formatted_now} successfully.")
     except Exception as e:
         print(f"An error occurred: {e}")
         return []
